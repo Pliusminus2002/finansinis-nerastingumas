@@ -747,12 +747,6 @@ export default function App() {
                   „Add to Home Screen“ arba „Pridėti prie pradžios ekrano“.
                   Tada programėlė atsiras telefone kaip atskira ikona.
                 </p>
-
-                <p>
-                  Ši versija yra MVP – pirmoji veikianti produkto versija.
-                  Vėliau galima pridėti prisijungimą, duomenų bazę ir kelių
-                  vartotojų palaikymą.
-                </p>
               </div>
             </Card>
           </section>
