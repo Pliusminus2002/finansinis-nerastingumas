@@ -3,13 +3,16 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   BarChart3,
+  Bell,
   BookOpen,
   CalendarDays,
   Home,
   Lightbulb,
   LineChart,
+  Moon,
   PiggyBank,
   Plus,
+  Sun,
   Target,
   Trash2,
   Wallet,
@@ -30,6 +33,7 @@ import {
 } from "recharts";
 
 const STORAGE_KEY = "finansinis-nerastingumas-data-v2";
+const LAST_REMINDER_KEY = `${STORAGE_KEY}-last-reminder`;
 
 const categories = [
   "Maistas",
@@ -114,9 +118,17 @@ export default function App() {
     storedData?.monthlyBudget ?? "350"
   );
 
-  const [savingGoal, setSavingGoal] = useState(
-    storedData?.savingGoal ?? "100"
+  const [savingGoal, setSavingGoal] = useState(storedData?.savingGoal ?? "100");
+
+  const [remindersEnabled, setRemindersEnabled] = useState(
+    storedData?.remindersEnabled ?? false
   );
+
+  const [reminderTime, setReminderTime] = useState(
+    storedData?.reminderTime ?? "20:00"
+  );
+
+  const [darkMode, setDarkMode] = useState(storedData?.darkMode ?? false);
 
   const [form, setForm] = useState({
     type: "expense",
@@ -130,9 +142,60 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ transactions, monthlyBudget, savingGoal })
+      JSON.stringify({
+        transactions,
+        monthlyBudget,
+        savingGoal,
+        remindersEnabled,
+        reminderTime,
+        darkMode,
+      })
     );
-  }, [transactions, monthlyBudget, savingGoal]);
+  }, [
+    transactions,
+    monthlyBudget,
+    savingGoal,
+    remindersEnabled,
+    reminderTime,
+    darkMode,
+  ]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark-mode", darkMode);
+  }, [darkMode]);
+
+  useEffect(() => {
+    if (!remindersEnabled) return;
+
+    function checkReminder() {
+      const now = new Date();
+      const currentTime = now.toTimeString().slice(0, 5);
+      const todayKey = now.toISOString().slice(0, 10);
+      const lastReminderDate = localStorage.getItem(LAST_REMINDER_KEY);
+
+      if (currentTime === reminderTime && lastReminderDate !== todayKey) {
+        const message =
+          "Laikas įvesti šiandienos pajamas ar išlaidas ir peržiūrėti biudžetą.";
+
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("Finansinis neraštingumas", {
+            body: message,
+            icon: "/icon.svg",
+          });
+        } else {
+          alert(message);
+        }
+
+        localStorage.setItem(LAST_REMINDER_KEY, todayKey);
+      }
+    }
+
+    checkReminder();
+
+    const intervalId = setInterval(checkReminder, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [remindersEnabled, reminderTime]);
 
   const month = currentMonth();
 
@@ -177,7 +240,9 @@ export default function App() {
       .map((category) => ({
         name: category,
         value: monthTransactions
-          .filter((item) => item.type === "expense" && item.category === category)
+          .filter(
+            (item) => item.type === "expense" && item.category === category
+          )
           .reduce((sum, item) => sum + Number(item.amount), 0),
       }))
       .filter((item) => item.value > 0);
@@ -262,14 +327,43 @@ export default function App() {
       transactions: [],
       monthlyBudget: "350",
       savingGoal: "100",
+      remindersEnabled: false,
+      reminderTime: "20:00",
+      darkMode: false,
     };
 
     setTransactions(freshData.transactions);
     setMonthlyBudget(freshData.monthlyBudget);
     setSavingGoal(freshData.savingGoal);
+    setRemindersEnabled(freshData.remindersEnabled);
+    setReminderTime(freshData.reminderTime);
+    setDarkMode(freshData.darkMode);
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(freshData));
+    localStorage.removeItem(LAST_REMINDER_KEY);
+
     setActivePage("dashboard");
+  }
+
+  async function toggleReminders() {
+    if (remindersEnabled) {
+      setRemindersEnabled(false);
+      return;
+    }
+
+    if (!("Notification" in window)) {
+      alert("Ši naršyklė nepalaiko pranešimų.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+
+    if (permission === "granted") {
+      setRemindersEnabled(true);
+      alert("Priminimai įjungti.");
+    } else {
+      alert("Priminimai neįjungti, nes nebuvo suteiktas leidimas.");
+    }
   }
 
   return (
@@ -341,6 +435,44 @@ export default function App() {
             <span>{month}</span>
           </div>
         </header>
+
+        <div className="dashboard-toggles">
+          <div className="dashboard-toggle-card">
+            <div className="dashboard-toggle-label">
+              {darkMode ? <Moon size={20} /> : <Sun size={20} />}
+              <div>
+                <strong>{darkMode ? "Dark mode" : "Light mode"}</strong>
+                <span>Keisti programėlės išvaizdą</span>
+              </div>
+            </div>
+
+            <ToggleSwitch
+              checked={darkMode}
+              onChange={() => setDarkMode((old) => !old)}
+              label="Keisti režimą"
+            />
+          </div>
+
+          <div className="dashboard-toggle-card">
+            <div className="dashboard-toggle-label">
+              <Bell size={20} />
+              <div>
+                <strong>Priminimai</strong>
+                <span>
+                  {remindersEnabled
+                    ? "Priminimai įjungti"
+                    : "Priminti įvesti dienos išlaidas"}
+                </span>
+              </div>
+            </div>
+
+            <ToggleSwitch
+              checked={remindersEnabled}
+              onChange={toggleReminders}
+              label="Įjungti arba išjungti priminimus"
+            />
+          </div>
+        </div>
 
         {activePage === "dashboard" && (
           <section className="page-grid">
@@ -460,7 +592,11 @@ export default function App() {
                           {categoryData.map((entry, index) => (
                             <Cell
                               key={entry.name}
-                              fill={categoryColors[index % categoryColors.length]}
+                              fill={
+                                categoryColors[
+                                  index % categoryColors.length
+                                ]
+                              }
                             />
                           ))}
                         </Pie>
@@ -482,7 +618,9 @@ export default function App() {
                     label="Didžiausia kategorija"
                     value={
                       biggestCategory
-                        ? `${biggestCategory.name} (${eur(biggestCategory.value)})`
+                        ? `${biggestCategory.name} (${eur(
+                            biggestCategory.value
+                          )})`
                         : "Nėra duomenų"
                     }
                   />
@@ -637,9 +775,7 @@ export default function App() {
                     type="number"
                     min="0"
                     value={monthlyBudget}
-                    onChange={(event) =>
-                      setMonthlyBudget(event.target.value)
-                    }
+                    onChange={(event) => setMonthlyBudget(event.target.value)}
                     placeholder="Įrašyk mėnesio biudžetą"
                   />
                 </Label>
@@ -651,6 +787,14 @@ export default function App() {
                     value={savingGoal}
                     onChange={(event) => setSavingGoal(event.target.value)}
                     placeholder="Įrašyk taupymo tikslą"
+                  />
+                </Label>
+
+                <Label title="Kasdienio priminimo laikas">
+                  <input
+                    type="time"
+                    value={reminderTime}
+                    onChange={(event) => setReminderTime(event.target.value)}
                   />
                 </Label>
 
@@ -734,6 +878,8 @@ export default function App() {
                   <li>Pajamų ir išlaidų įvedimas</li>
                   <li>Išlaidų kategorijų analizė</li>
                   <li>Mėnesio biudžeto planavimas</li>
+                  <li>Priminimų įjungimas</li>
+                  <li>Light / dark režimas</li>
                   <li>Finansiniai patarimai studentams</li>
                   <li>Duomenų saugojimas naršyklėje</li>
                 </ul>
@@ -746,6 +892,18 @@ export default function App() {
                   Atsidaryk svetainės nuorodą telefone. Naršyklėje pasirink
                   „Add to Home Screen“ arba „Pridėti prie pradžios ekrano“.
                   Tada programėlė atsiras telefone kaip atskira ikona.
+                </p>
+
+                <p>
+                  Priminimus galima įjungti pagrindiniame ekrane. Vartotojas
+                  taip pat gali pasirinkti kasdienio priminimo laiką biudžeto
+                  skiltyje.
+                </p>
+
+                <p>
+                  Ši versija yra MVP – pirmoji veikianti produkto versija.
+                  Vėliau galima pridėti prisijungimą, duomenų bazę ir tikrus
+                  push pranešimus.
                 </p>
               </div>
             </Card>
@@ -894,6 +1052,19 @@ function TransactionList({ transactions, onDelete, compact }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      className={checked ? "toggle-switch active" : "toggle-switch"}
+      onClick={onChange}
+      aria-label={label}
+    >
+      <span />
+    </button>
   );
 }
 
